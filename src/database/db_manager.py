@@ -18,6 +18,12 @@ class DatabaseManager:
         Using a VIEW for zero-copy query over Parquet files (High Performance).
         """
         try:
+            # Ensure directory exists to avoid FileNotFoundError
+            if not os.path.exists(data_dir):
+                logging.warning(f"Data directory {data_dir} not found. Creating it.")
+                os.makedirs(data_dir)
+                return
+
             parquet_files = [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith('.parquet')]
             if not parquet_files:
                 logging.warning("No parquet files found to load.")
