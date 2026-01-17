@@ -9,7 +9,6 @@ class DatabaseManager:
 
     def _setup(self):
         """Initial setup."""
-        # We can implement persistent schema here if using a file-based DB
         pass
 
     def load_data(self, data_dir='../../data'):
@@ -18,7 +17,6 @@ class DatabaseManager:
         Using a VIEW for zero-copy query over Parquet files (High Performance).
         """
         try:
-            # Ensure directory exists to avoid FileNotFoundError
             if not os.path.exists(data_dir):
                 logging.warning(f"Data directory {data_dir} not found. Creating it.")
                 os.makedirs(data_dir)
