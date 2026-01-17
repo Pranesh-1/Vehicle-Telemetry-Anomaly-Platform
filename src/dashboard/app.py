@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import sys
 import os
 
-# Add src to path so we can import our modules
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database.db_manager import DatabaseManager
@@ -15,7 +15,6 @@ from analytics.insights import FleetInsights
 
 st.set_page_config(layout="wide", page_title="Motorq Telemetry Analytics")
 
-# Professional Enterprise Theme CSS
 st.markdown("""
 <style>
     /* Global Font and Background */
@@ -66,6 +65,24 @@ def get_db():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     data_dir = os.path.join(base_dir, 'data')
     
+    # Cloud Deployment Check: If no data exists, generate seed data
+    if not os.path.exists(data_dir) or not any(f.endswith('.parquet') for f in os.listdir(data_dir)):
+        st.warning("⚠️ No data found (Cloud Deployment Detected). Generating seed data... Please wait.")
+        try:
+            # Import dynamically to avoid top-level path issues
+            sys.path.append(os.path.join(base_dir, 'src'))
+            from ingestion.ingestor import run_ingestion_pipeline
+            run_ingestion_pipeline(num_records=5000) # Generate 5k records for the cloud demo
+            st.success("✅ Data generated successfully!")
+        except Exception as e:
+            st.error(f"Failed to generate data: {e}")
+            st.stop() # Stop execution if data generation fails
+            
+    # Double check if data directory exists now
+    if not os.path.exists(data_dir):
+        st.error(f"Critical Error: Data Directory {data_dir} could not be created.")
+        st.stop()
+            
     db = DatabaseManager()
     db.load_data(data_dir)
     return db
