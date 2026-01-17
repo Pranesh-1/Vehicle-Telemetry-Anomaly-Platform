@@ -6,7 +6,6 @@ import plotly.graph_objects as go
 import sys
 import os
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from database.db_manager import DatabaseManager
@@ -70,7 +69,11 @@ def get_db():
         st.warning("⚠️ No data found (Cloud Deployment Detected). Generating seed data... Please wait.")
         try:
             # Import dynamically to avoid top-level path issues
+            # Add 'src' for package resolution
             sys.path.append(os.path.join(base_dir, 'src'))
+            # Add 'src/ingestion' so that 'import generator' inside ingestor.py works
+            sys.path.append(os.path.join(base_dir, 'src', 'ingestion'))
+            
             from ingestion.ingestor import run_ingestion_pipeline
             run_ingestion_pipeline(num_records=5000) # Generate 5k records for the cloud demo
             st.success("✅ Data generated successfully!")
