@@ -12,7 +12,14 @@ class TelemetryGenerator:
         self.vehicle_ids = vehicle_ids
         self.data_buffer = []
         
-        # Initialize vehicle state (Simulation of current physics)
+        profiles = ['Normal', 'Aggressive', 'Eco', 'Malfunctioning']
+        self.vehicle_profiles = {vid: random.choice(profiles) for vid in vehicle_ids}
+        
+        if len(vehicle_ids) >= 4:
+            self.vehicle_profiles[vehicle_ids[0]] = 'Aggressive'
+            self.vehicle_profiles[vehicle_ids[1]] = 'Eco'
+            self.vehicle_profiles[vehicle_ids[2]] = 'Malfunctioning'
+        
         self.state = {
             vid: {
                 'speed': 0.0,
@@ -20,7 +27,7 @@ class TelemetryGenerator:
                 'engine_temp': 70.0,
                 'fuel_rate': 2.0,
                 'battery_voltage': 13.5,
-                'lat': 37.7749, # SF default
+                'lat': 37.7749,
                 'lon': -122.4194,
                 'odometer': 10000.0
             }
@@ -28,35 +35,54 @@ class TelemetryGenerator:
         }
 
     def _update_state(self, vid: str):
-        """Evolve the state of the vehicle using random walk logic."""
+        """Evolve the state of the vehicle using random walk logic, biased by profile."""
         s = self.state[vid]
+        profile = self.vehicle_profiles[vid]
         
-        # Speed change (acceleration/deceleration)
-        accel = np.random.normal(0, 2) # Random accel
-        s['speed'] = max(0, min(220, s['speed'] + accel))
+        accel_bias = 0
+        speed_cap = 220
+        rpm_noise = 100
         
-        # RPM correlates with speed but has noise (and idle state)
-        if s['speed'] == 0:
-            s['rpm'] = max(600, min(1000, s['rpm'] + np.random.normal(0, 20))) # Idle RPM
+        if profile == 'Aggressive':
+            accel_bias = 0.5 # Tends to accelerate
+            accel_variance = 4 # Jerky driving
+        elif profile == 'Eco':
+            accel_bias = -0.1 # Tends to coast
+            accel_variance = 1 # Smooth driving
+            speed_cap = 120
         else:
-            s['rpm'] = (s['speed'] * 30) + np.random.normal(0, 100) # Base gear ratio
+            accel_variance = 2
             
-        # Engine Temp (slowly rises, cools if stopped)
-        if s['speed'] > 0:
+        # Speed change (acceleration/deceleration)
+        accel = np.random.normal(accel_bias, accel_variance) 
+        s['speed'] = max(0, min(speed_cap, s['speed'] + accel))
+        
+        # RPM logic
+        if s['speed'] == 0:
+            if profile == 'Malfunctioning' and random.random() < 0.3:
+                s['rpm'] = np.random.normal(1500, 200) 
+            else:
+                s['rpm'] = max(600, min(1000, s['rpm'] + np.random.normal(0, 20)))
+        else:
+            ratio = 30 if profile != 'Aggressive' else 40
+            s['rpm'] = (s['speed'] * ratio) + np.random.normal(0, rpm_noise)
+            
+        if profile == 'Malfunctioning':
+            s['engine_temp'] += np.random.normal(0.2, 0.1) # Overheats faster
+        elif s['speed'] > 0:
             s['engine_temp'] += np.random.normal(0.1, 0.05)
         else:
             s['engine_temp'] -= 0.1
-        s['engine_temp'] = max(20, min(110, s['engine_temp']))
+        s['engine_temp'] = max(20, min(120, s['engine_temp']))
 
-        # Fuel Rate (L/hr)
-        s['fuel_rate'] = (s['rpm'] / 2000) * 1.5 + np.random.normal(0, 0.1)
+        factor = 1.5 if profile != 'Aggressive' else 2.2
+        s['fuel_rate'] = (s['rpm'] / 2000) * factor + np.random.normal(0, 0.1)
         
-        # Battery Voltage (Alternator Simulation)
-        # Normal is 13.5-14.5V when running, 12.0-12.6V when off. 
-        # We simulate "running" mostly.
-        s['battery_voltage'] = 13.5 + np.random.normal(0, 0.1)
-
-        # GPS Drift
+        if profile == 'Malfunctioning' and random.random() < 0.1:
+             s['battery_voltage'] = 12.0 + np.random.normal(0, 0.5) # Alternator failing
+        else:
+             s['battery_voltage'] = 13.5 + np.random.normal(0, 0.1)
+        
         s['lat'] += np.random.normal(0, 0.0001)
         s['lon'] += np.random.normal(0, 0.0001)
         
@@ -67,22 +93,18 @@ class TelemetryGenerator:
         """Randomly injects different types of anomalies for detection testing."""
         roll = random.random()
         
-        # 1. Impossible Speed (1% prob) - Data Integrity Check
         if roll < 0.01:
             packet['speed_kmph'] = -10 if random.random() < 0.5 else 300
             
-        # 2. Engine Overheat (2% prob) - Rule Based
         elif roll < 0.03:
             packet['engine_temp'] = 115 + random.uniform(0, 10)
             
-        # 3. Voltage Drop (Simulate bad alternator) (2% prob) - Trend/Rule
         elif roll < 0.05:
             packet['battery_voltage'] = 11.5 - random.uniform(0, 2)
             
-        # 4. High Idle (High Fuel Consumption at 0 Speed) (3% prob) - Business Insight
         elif roll < 0.08:
             packet['speed_kmph'] = 0
-            packet['rpm'] = 2500 # Revving engine while stopped
+            packet['rpm'] = 2500 
             packet['fuel_rate'] = 5.0
 
         return packet
@@ -110,17 +132,14 @@ class TelemetryGenerator:
                     'lon': state['lon']
                 }
                 
-                # Inject anomaly
                 packet = self._inject_anomaly(packet)
                 records.append(packet)
             
-            # Increment time (e.g. 1 second)
             current_time += timedelta(seconds=1)
             
         return pd.DataFrame(records)
 
 if __name__ == "__main__":
-    # Test generation
     gen = TelemetryGenerator(['V001', 'V002', 'V003'])
     df = gen.generate_batch(datetime.now(), 100)
     print(df.head())
